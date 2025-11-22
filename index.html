@@ -344,6 +344,33 @@
                                 </div>
                             </div>
                         )}
+
+                        {/* Creator Credits Section */}
+                        <div className="mt-16 mb-8 border-t border-slate-800/50 pt-8 flex justify-center">
+                            <a 
+                                href="https://x.com/CatfireOnSOL" 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="group flex items-center gap-3 bg-slate-900/50 hover:bg-slate-900 border border-slate-800 hover:border-yellow-500/30 px-5 py-3 rounded-full transition-all duration-300 hover:scale-105"
+                            >
+                                <div className="relative">
+                                    <div className="w-10 h-10 rounded-full bg-slate-800 overflow-hidden border-2 border-slate-700 group-hover:border-yellow-500 transition-colors">
+                                        <img 
+                                            src="https://unavatar.io/twitter/CatfireOnSOL" 
+                                            alt="Super Skyzee" 
+                                            className="w-full h-full object-cover"
+                                        />
+                                    </div>
+                                    <div className="absolute -bottom-1 -right-1 bg-yellow-500 text-black text-[10px] font-bold px-1.5 rounded-full border border-slate-900">Dev</div>
+                                </div>
+                                <div className="flex flex-col">
+                                    <span className="text-xs text-slate-500 font-medium group-hover:text-yellow-500/80 transition-colors">Created by</span>
+                                    <span className="text-sm font-bold text-slate-300 group-hover:text-white transition-colors">Super Skyzee</span>
+                                    <span className="text-[10px] text-slate-600 font-mono group-hover:text-yellow-400/60">@CatfireOnSOL</span>
+                                </div>
+                                <Icons.ExternalLink className="w-4 h-4 text-slate-600 group-hover:text-yellow-500 ml-1 transition-colors" />
+                            </a>
+                        </div>
                     </div>
                 </div>
             );
