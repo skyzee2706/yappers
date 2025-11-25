@@ -3,23 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Yappers Checker</title>
-    <meta name="description" content="Check your $GOATED allocation based on Mindshare leaderboard">
+    <title>Yappers Checker Ultimate</title>
+    <meta name="description" content="Check your estimated $GOATED allocation">
     <link rel="icon" href="https://unavatar.io/twitter/GOATRollup" />
     
-    <!-- 1. Tailwind CSS (CDN) -->
+    <!-- 1. Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- 2. React & ReactDOM (CDN) -->
+    <!-- 2. React & ReactDOM -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     
-    <!-- 3. Babel Standalone (Agar browser bisa baca JSX) -->
+    <!-- 3. Babel Standalone -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <!-- 4. Styles -->
     <style>
-        /* Custom Scrollbar */
         .custom-scrollbar::-webkit-scrollbar { width: 8px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #0f172a; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
@@ -42,7 +41,7 @@
 
     <!-- 5. Application Logic -->
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useMemo } = React;
         
         // Ikon Lucide
         const Icons = {
@@ -54,116 +53,180 @@
             RefreshCw: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>,
             CheckCircle2: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>,
             ExternalLink: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>,
-            XCircle: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+            XCircle: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>,
+            ChevronLeft: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="m15 18-6-6 6-6"/></svg>,
+            ChevronRight: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="m9 18 6-6-6-6"/></svg>
         };
 
-        const TOTAL_POOL = 583332.75;
+        // --- UPDATED POOL ---
+        const TOTAL_POOL = 350000;
+        const ITEMS_PER_PAGE = 100;
 
         function App() {
-            const [data, setData] = useState([]);
+            // STATE UTAMA
+            const [data30d, setData30d] = useState([]);
+            const [data7d, setData7d] = useState([]);
+            const [activeTab, setActiveTab] = useState('30d');
+            
             const [loading, setLoading] = useState(true);
-            const [searchQuery, setSearchQuery] = useState('');
+            const [mainSearchQuery, setMainSearchQuery] = useState(''); // Untuk Check Now
+            const [tableSearchQuery, setTableSearchQuery] = useState(''); // Untuk Search Table
             const [userResult, setUserResult] = useState(null);
             const [error, setError] = useState(null);
-            const [dataSource, setDataSource] = useState('direct');
+            const [dataSource, setDataSource] = useState('');
 
-            const fetchLeaderboard = async () => {
+            // State Pagination
+            const [currentPage, setCurrentPage] = useState(1);
+
+            // --- FETCHING LOGIC (ROBUST PROXY) ---
+            const fetchSingleUrl = async (targetUrl) => {
+                let response;
+                let finalData = [];
+                let usedSource = '';
+
+                const fetchWithTimeout = async (url, options = {}) => {
+                    const controller = new AbortController();
+                    const id = setTimeout(() => controller.abort(), 10000); 
+                    try {
+                        const res = await fetch(url, { ...options, signal: controller.signal });
+                        clearTimeout(id);
+                        return res;
+                    } catch (error) {
+                        clearTimeout(id);
+                        throw error;
+                    }
+                };
+
+                try {
+                    const res = await fetchWithTimeout(targetUrl);
+                    if (res.ok) {
+                        response = res;
+                        usedSource = 'Direct API';
+                    } else {
+                        throw new Error('Direct fetch failed');
+                    }
+                } catch (directErr) {
+                    try {
+                        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}&t=${Date.now()}`;
+                        const res1 = await fetchWithTimeout(proxyUrl);
+                        if (res1.ok) {
+                            response = res1;
+                            usedSource = 'Proxy (AllOrigins)';
+                        } else {
+                            throw new Error('AllOrigins failed');
+                        }
+                    } catch (err2) {
+                        const proxyUrl2 = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+                        response = await fetchWithTimeout(proxyUrl2);
+                        usedSource = 'Proxy (CorsProxy)';
+                    }
+                }
+
+                if (!response || !response.ok) throw new Error('Failed to connect to API.');
+
+                const result = await response.json();
+                
+                if (Array.isArray(result)) {
+                    finalData = result;
+                } else if (typeof result === 'object' && result !== null) {
+                    finalData = result.data || result.result || result.users || result.leaderboard || [];
+                    if (finalData.length === 0) {
+                        Object.keys(result).forEach(key => {
+                            if (Array.isArray(result[key]) && result[key].length > 0) finalData = result[key];
+                        });
+                    }
+                }
+
+                return { data: finalData, source: usedSource };
+            };
+
+            const fetchAllData = async () => {
                 setLoading(true);
                 setError(null);
                 setUserResult(null);
 
-                const targetUrl = 'https://yappers-api.goat.network/leaderboard?days=30&limit=500';
+                const url30 = 'https://yappers-api.goat.network/leaderboard?days=30&limit=500';
+                const url7 = 'https://yappers-api.goat.network/leaderboard?days=7&limit=500';
 
                 try {
-                    let response;
-                    let finalData = [];
+                    const [res30, res7] = await Promise.all([
+                        fetchSingleUrl(url30),
+                        fetchSingleUrl(url7)
+                    ]);
 
-                    // Fetch with timeout helper
-                    const fetchWithTimeout = async (url, options = {}) => {
-                        const controller = new AbortController();
-                        const id = setTimeout(() => controller.abort(), 10000); // 10s timeout
-                        try {
-                            const res = await fetch(url, { ...options, signal: controller.signal });
-                            clearTimeout(id);
-                            return res;
-                        } catch (error) {
-                            clearTimeout(id);
-                            throw error;
-                        }
-                    };
-
-                    try {
-                        // Attempt 1: Direct fetch
-                        const res = await fetchWithTimeout(targetUrl);
-                        if (res.ok) {
-                            response = res;
-                            setDataSource('Direct API');
-                        } else {
-                            throw new Error('Direct fetch status not OK');
-                        }
-                    } catch (directErr) {
-                        console.warn("Direct fetch failed, trying Proxy...");
-                        try {
-                            // Attempt 2: Proxy AllOrigins
-                            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}&t=${Date.now()}`;
-                            const res1 = await fetchWithTimeout(proxyUrl);
-                            if (res1.ok) {
-                                response = res1;
-                                setDataSource('Proxy (AllOrigins)');
-                            } else {
-                                throw new Error('Proxy failed');
-                            }
-                        } catch (err2) {
-                             // Attempt 3: Proxy CorsProxy (Backup)
-                             const proxyUrl2 = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
-                             response = await fetchWithTimeout(proxyUrl2);
-                             setDataSource('Proxy (CorsProxy)');
-                        }
-                    }
-                    
-                    if (!response || !response.ok) throw new Error('Failed to connect to API.');
-
-                    const result = await response.json();
-                    
-                    // Parsing Logic
-                    if (Array.isArray(result)) {
-                        finalData = result;
-                    } else if (typeof result === 'object' && result !== null) {
-                        finalData = result.data || result.result || result.users || result.leaderboard || [];
-                        if (finalData.length === 0) {
-                            Object.keys(result).forEach(key => {
-                                if (Array.isArray(result[key]) && result[key].length > 0) finalData = result[key];
-                            });
-                        }
-                    }
-                    
-                    if (!finalData || finalData.length === 0) throw new Error('Data empty.');
-                    setData(finalData);
+                    setData30d(res30.data || []);
+                    setData7d(res7.data || []);
+                    setDataSource(res30.source);
 
                 } catch (err) {
                     console.error("Fetch Error:", err);
-                    setError(`Failed to load data: ${err.message}`);
+                    setError(`Failed to load data: ${err.message}. Please refresh or try VPN.`);
                 } finally {
                     setLoading(false);
                 }
             };
 
-            useEffect(() => { fetchLeaderboard(); }, []);
+            useEffect(() => { fetchAllData(); }, []);
+            
+            // Reset pagination and table search when tab changes
+            useEffect(() => { 
+                setCurrentPage(1); 
+                setTableSearchQuery(''); 
+            }, [activeTab]);
 
-            const handleSearch = () => {
-                if (!searchQuery) return;
-                const query = searchQuery.toLowerCase().trim().replace(/^@/, '');
-                const found = data.find(u => {
-                    const uname = (u.username || '').toLowerCase();
-                    const h = (u.handle || '').toLowerCase();
-                    return uname === query || h === query;
+            // --- LOGIC ---
+            const user30dMap = useMemo(() => {
+                const map = {};
+                data30d.forEach(user => {
+                    const key = (user.username || user.handle || '').toLowerCase();
+                    map[key] = parseFloat(user.mindshare);
                 });
-                setUserResult(found ? found : 'not_found');
+                return map;
+            }, [data30d]);
+
+            const get30DMindshare = (username) => {
+                if (!username) return 0;
+                return user30dMap[username.toLowerCase()] || 0;
+            };
+
+            // Main Search (Check Now)
+            const handleMainSearch = () => {
+                if (!mainSearchQuery) return;
+                const query = mainSearchQuery.toLowerCase().trim().replace(/^@/, '');
+                
+                let found = data30d.find(u => (u.username || u.handle || '').toLowerCase() === query);
+                if (!found) found = data7d.find(u => (u.username || u.handle || '').toLowerCase() === query);
+                
+                if (!found) {
+                    setUserResult('not_found');
+                } else {
+                    setUserResult(found);
+                }
             };
 
             const formatNumber = (num) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(num);
             const formatCrypto = (num) => new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(num);
             const getAvatar = (username) => `https://unavatar.io/twitter/${username}`;
+
+            // --- FILTER & PAGINATION LOGIC FOR TABLE ---
+            const currentTableData = activeTab === '30d' ? data30d : data7d;
+
+            // 1. Filter Data based on Table Search
+            const filteredData = useMemo(() => {
+                if (!tableSearchQuery) return currentTableData;
+                const lowerQuery = tableSearchQuery.toLowerCase();
+                return currentTableData.filter(user => {
+                    const uname = (user.username || user.handle || '').toLowerCase();
+                    return uname.includes(lowerQuery);
+                });
+            }, [currentTableData, tableSearchQuery]);
+
+            // 2. Pagination based on Filtered Data
+            const totalPages = Math.ceil(filteredData.length / ITEMS_PER_PAGE);
+            const paginatedData = useMemo(() => {
+                const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+                return filteredData.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+            }, [filteredData, currentPage]);
 
             return (
                 <div className="min-h-screen">
@@ -179,19 +242,21 @@
                                 </h1>
                             </div>
                             <p className="text-slate-400 text-sm md:text-base font-medium max-w-lg mx-auto leading-relaxed">
-                                Calculate your <span className="text-yellow-400 font-bold">$GOATED</span> allocation based on the 30-day Mindshare leaderboard.
+                                Calculate your <span className="text-yellow-400 font-bold">estimated $GOATED allocation</span>.
+                                <br/>
+                                <span className="text-xs opacity-75 font-mono">*Allocation is ALWAYS based on 30-Day Mindshare.</span>
                             </p>
                             {!loading && !error && (
                                 <div className="mt-4 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800/50 border border-slate-700 text-xs text-slate-400">
                                     <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                                    Live Data: {data.length} Users ({dataSource})
+                                    Sync: {data30d.length} (30D) | {data7d.length} (7D) via {dataSource}
                                 </div>
                             )}
                         </div>
                     </div>
 
-                    <div className="max-w-3xl mx-auto px-4 -mt-8 relative z-10">
-                        {/* Search Card */}
+                    <div className="max-w-4xl mx-auto px-4 -mt-8 relative z-10">
+                        {/* Search Card (Main) */}
                         <div className="bg-slate-900/95 border border-slate-700 rounded-3xl shadow-2xl p-6 md:p-8 backdrop-blur-xl">
                             <div className="flex flex-col gap-4">
                                 <label className="text-sm font-semibold text-slate-400 ml-1">Search X Username</label>
@@ -202,13 +267,13 @@
                                             type="text" 
                                             placeholder="Example: elonmusk" 
                                             className="w-full bg-slate-950 border border-slate-800 text-white pl-12 pr-4 py-4 rounded-2xl focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500 outline-none transition-all placeholder-slate-600 font-medium"
-                                            value={searchQuery}
-                                            onChange={(e) => setSearchQuery(e.target.value)}
-                                            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                                            value={mainSearchQuery}
+                                            onChange={(e) => setMainSearchQuery(e.target.value)}
+                                            onKeyDown={(e) => e.key === 'Enter' && handleMainSearch()}
                                         />
                                     </div>
                                     <button 
-                                        onClick={handleSearch}
+                                        onClick={handleMainSearch}
                                         disabled={loading}
                                         className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-400 hover:to-yellow-500 text-black font-bold py-4 px-8 rounded-2xl transition-all shadow-lg shadow-yellow-500/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                                     >
@@ -222,7 +287,7 @@
                                 <div className="mt-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-start gap-3 text-red-200">
                                     <Icons.AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-500" />
                                     <div className="flex-1 text-sm leading-relaxed">{error}</div>
-                                    <button onClick={fetchLeaderboard} className="p-2 hover:bg-red-500/20 rounded-lg text-red-400 hover:text-red-200 transition-colors">
+                                    <button onClick={fetchAllData} className="p-2 hover:bg-red-500/20 rounded-lg text-red-400 hover:text-red-200 transition-colors">
                                         <Icons.RefreshCw className="w-4 h-4" />
                                     </button>
                                 </div>
@@ -232,136 +297,271 @@
                             {loading && (
                                 <div className="py-12 flex flex-col items-center justify-center text-slate-400">
                                     <Icons.Loader2 className="w-10 h-10 animate-spin-custom mb-4 text-yellow-500" />
-                                    <p className="animate-pulse font-medium">Fetching latest data...</p>
+                                    <p className="animate-pulse font-medium">Fetching 30D & 7D Data...</p>
                                 </div>
                             )}
 
-                            {/* Not Eligible State (Updated) */}
-                            {userResult === 'not_found' && !loading && (
-                                <div className="mt-8 text-center py-10 bg-red-950/20 rounded-2xl border border-red-500/30 border-dashed animate-shake">
-                                    <div className="inline-flex p-3 rounded-full bg-red-500/10 mb-4">
-                                        <Icons.XCircle className="w-10 h-10 text-red-500" />
-                                    </div>
-                                    <p className="text-3xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-orange-500 tracking-widest uppercase drop-shadow-sm">
-                                        YOU'RE NOT ELIGIBLE
-                                    </p>
-                                    <div className="mt-4 max-w-md mx-auto px-4">
-                                        <p className="text-slate-300 font-medium text-lg">
-                                            Don't give up! 💪
-                                        </p>
-                                        <p className="text-slate-400 mt-2 text-sm leading-relaxed">
-                                            Keep grinding, stay active on X, and increase your Mindshare. <br/>
-                                            <span className="text-yellow-500 font-bold">Your time to shine will come!</span> 🚀🔥
-                                        </p>
-                                    </div>
-                                </div>
+                            {/* NOT ELIGIBLE / NOT FOUND CARD */}
+                            {!loading && userResult && (
+                                (() => {
+                                    const username = userResult === 'not_found' ? mainSearchQuery : (userResult.username || userResult.handle);
+                                    const ms30 = get30DMindshare(username);
+                                    const isNotEligible = ms30 === 0;
+
+                                    if (userResult === 'not_found' || isNotEligible) {
+                                        return (
+                                            <div className="mt-8 text-center py-10 bg-red-950/20 rounded-2xl border border-red-500/30 border-dashed animate-shake">
+                                                <div className="inline-flex p-3 rounded-full bg-red-500/10 mb-4">
+                                                    <Icons.XCircle className="w-12 h-12 text-red-500" />
+                                                </div>
+                                                <h2 className="text-3xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-orange-500 tracking-widest uppercase drop-shadow-sm mb-4">
+                                                    YOU'RE NOT ELIGIBLE
+                                                </h2>
+                                                <div className="mt-2 max-w-md mx-auto px-4">
+                                                    <p className="text-white font-bold text-xl mb-2">
+                                                        Don't give up! 💪
+                                                    </p>
+                                                    <p className="text-slate-400 text-sm leading-relaxed">
+                                                        Keep grinding, stay active on X, and increase your Mindshare. <br/>
+                                                        <span className="text-yellow-500 font-bold">Your time to shine will come!</span> 🚀🔥
+                                                    </p>
+                                                    {userResult !== 'not_found' && ms30 === 0 && (
+                                                        <p className="mt-4 text-xs text-slate-500 bg-slate-900/50 p-2 rounded border border-slate-800">
+                                                            Info: You might be on the 7D list, but allocation requires 30D Mindshare.
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                    return null;
+                                })()
                             )}
                         </div>
 
-                        {/* Result Card */}
-                        {userResult && userResult !== 'not_found' && (
-                            <div className="mt-6 bg-gradient-to-b from-slate-800 to-slate-900 border border-yellow-500/30 rounded-3xl shadow-2xl overflow-hidden relative">
-                                <div className="absolute top-0 right-0 p-8 opacity-5"><Icons.Trophy className="w-64 h-64" /></div>
-                                <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-5"></div>
-                                
-                                <div className="p-6 md:p-10 relative z-10">
-                                    <div className="flex flex-col md:flex-row md:items-center gap-6 mb-8 pb-8 border-b border-white/5">
-                                        <div className="relative group cursor-pointer">
-                                            <a href={`https://x.com/${userResult.username}`} target="_blank" rel="noopener noreferrer">
-                                                <div className="w-20 h-20 rounded-full bg-slate-800 border-2 border-yellow-500 flex items-center justify-center overflow-hidden shadow-xl shadow-yellow-500/10 group-hover:scale-105 transition-transform">
-                                                    <img 
-                                                        src={getAvatar(userResult.username)} 
-                                                        alt={userResult.username} 
-                                                        className="w-full h-full object-cover"
-                                                        onError={(e) => { e.target.onerror = null; e.target.src = `https://ui-avatars.com/api/?name=${userResult.username}&background=random`; }}
-                                                    />
-                                                </div>
-                                            </a>
-                                            <div className="absolute -bottom-2 -right-2 bg-slate-900 text-yellow-500 text-xs font-bold px-2 py-1 rounded-full border border-yellow-500/50 shadow-sm">#{userResult.rank || '?'}</div>
-                                        </div>
-                                        <div className="flex-1">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <a href={`https://x.com/${userResult.username}`} target="_blank" rel="noopener noreferrer" className="group flex items-center gap-2">
-                                                    <h2 className="text-3xl font-bold text-white tracking-tight group-hover:text-yellow-400 transition-colors">@{userResult.username}</h2>
-                                                    <Icons.ExternalLink className="w-5 h-5 text-slate-500 group-hover:text-yellow-400 opacity-0 group-hover:opacity-100 transition-all" />
-                                                </a>
-                                                <Icons.CheckCircle2 className="w-5 h-5 text-blue-400" />
-                                            </div>
-                                            <div className="flex items-center gap-4 text-sm text-slate-400 font-mono">
-                                                <span className="bg-slate-800 px-2 py-0.5 rounded text-xs">X USER</span>
-                                                {userResult.wallet && <span className="truncate max-w-[150px] opacity-50">{userResult.wallet}</span>}
-                                            </div>
-                                        </div>
-                                    </div>
+                        {/* ELIGIBLE RESULT CARD */}
+                        {userResult && userResult !== 'not_found' && get30DMindshare(userResult.username || userResult.handle) > 0 && (
+                            (() => {
+                                const username = userResult.username || userResult.handle;
+                                const ms30 = get30DMindshare(username);
+                                const allocation = ms30 * TOTAL_POOL;
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div className="bg-slate-950/60 p-5 rounded-2xl border border-white/5 flex flex-col justify-between">
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <div className="w-2 h-2 rounded-full bg-purple-500"></div>
-                                                <p className="text-slate-400 text-sm font-medium uppercase tracking-wider">Mindshare Score</p>
+                                return (
+                                    <div className="mt-6 bg-gradient-to-b from-slate-800 to-slate-900 border border-yellow-500/30 rounded-3xl shadow-2xl overflow-hidden relative">
+                                        <div className="absolute top-0 right-0 p-8 opacity-5"><Icons.Trophy className="w-64 h-64" /></div>
+                                        
+                                        <div className="p-6 md:p-10 relative z-10">
+                                            <div className="flex flex-col md:flex-row md:items-center gap-6 mb-8 pb-8 border-b border-white/5">
+                                                <div className="relative group cursor-pointer">
+                                                    <a href={`https://x.com/${username}`} target="_blank" rel="noopener noreferrer">
+                                                        <div className="w-20 h-20 rounded-full bg-slate-800 border-2 border-yellow-500 flex items-center justify-center overflow-hidden shadow-xl shadow-yellow-500/10 group-hover:scale-105 transition-transform">
+                                                            <img 
+                                                                src={getAvatar(username)} 
+                                                                alt={username} 
+                                                                className="w-full h-full object-cover"
+                                                                onError={(e) => { e.target.onerror = null; e.target.src = `https://ui-avatars.com/api/?name=${username}&background=random`; }}
+                                                            />
+                                                        </div>
+                                                    </a>
+                                                </div>
+                                                <div className="flex-1">
+                                                    <h2 className="text-3xl font-bold text-white tracking-tight">@{username}</h2>
+                                                    <div className="flex items-center gap-4 text-sm text-slate-400 font-mono mt-1">
+                                                        <span className="bg-slate-800 px-2 py-0.5 rounded text-xs border border-slate-700">
+                                                            Rank #{userResult.rank}
+                                                        </span>
+                                                        <span className="text-xs text-green-400 flex items-center gap-1">
+                                                            <Icons.CheckCircle2 className="w-3 h-3" /> Eligible
+                                                        </span>
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <p className="text-2xl font-bold text-white font-mono">{formatCrypto(userResult.mindshare * 100)}%</p>
-                                                <p className="text-xs text-slate-500 mt-1 font-mono">Raw: {userResult.mindshare}</p>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="bg-slate-950/60 p-5 rounded-2xl border border-white/5 flex flex-col justify-between">
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <div className="w-2 h-2 rounded-full bg-purple-500"></div>
+                                                        <p className="text-slate-400 text-sm font-medium uppercase tracking-wider">Mindshare (30D)</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-2xl font-bold text-white font-mono">{formatCrypto(ms30 * 100)}%</p>
+                                                    </div>
+                                                </div>
+                                                <div className="bg-gradient-to-br from-yellow-500/20 to-yellow-600/5 p-5 rounded-2xl border border-yellow-500/40 relative overflow-hidden group">
+                                                    <div className="flex items-center gap-2 mb-2 relative z-10">
+                                                        <Icons.Coins className="w-4 h-4 text-yellow-500" />
+                                                        <p className="text-yellow-200 text-sm font-bold uppercase tracking-wider">Estimated Allocation</p>
+                                                    </div>
+                                                    <p className="text-4xl font-black text-yellow-400 tracking-tight drop-shadow-sm relative z-10">{formatNumber(allocation)}</p>
+                                                </div>
                                             </div>
-                                        </div>
-                                        <div className="bg-gradient-to-br from-yellow-500/20 to-yellow-600/5 p-5 rounded-2xl border border-yellow-500/40 relative overflow-hidden group">
-                                            <div className="absolute top-0 right-0 w-24 h-24 bg-yellow-500/20 blur-3xl rounded-full -mr-10 -mt-10 group-hover:bg-yellow-500/30 transition-all"></div>
-                                            <div className="flex items-center gap-2 mb-2 relative z-10">
-                                                <Icons.Coins className="w-4 h-4 text-yellow-500" />
-                                                <p className="text-yellow-200 text-sm font-bold uppercase tracking-wider">Estimated $GOATED Allocation</p>
-                                            </div>
-                                            <p className="text-4xl font-black text-yellow-400 tracking-tight drop-shadow-sm relative z-10">{formatNumber(userResult.mindshare * TOTAL_POOL)}</p>
                                         </div>
                                     </div>
-                                </div>
-                            </div>
+                                );
+                            })()
                         )}
 
-                        {/* Leaderboard Table */}
-                        {!loading && data.length > 0 && (
-                            <div className="mt-12 mb-8">
-                                <div className="flex items-center justify-between mb-4 px-2">
-                                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                        {/* TAB SELECTION (YELLOW STYLE) */}
+                        <div className="mt-12 flex justify-center gap-4">
+                             <button 
+                                onClick={() => setActiveTab('30d')}
+                                className={`px-6 md:px-8 py-3 rounded-xl text-sm font-bold transition-all transform hover:scale-105 shadow-lg ${
+                                    activeTab === '30d' 
+                                    ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black shadow-yellow-500/20' 
+                                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                                }`}
+                            >
+                                30 DAYS
+                            </button>
+                            <button 
+                                onClick={() => setActiveTab('7d')}
+                                className={`px-6 md:px-8 py-3 rounded-xl text-sm font-bold transition-all transform hover:scale-105 shadow-lg ${
+                                    activeTab === '7d' 
+                                    ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black shadow-yellow-500/20' 
+                                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                                }`}
+                            >
+                                7 DAYS
+                            </button>
+                        </div>
+
+                        {/* Leaderboard Table with Pagination & Search */}
+                        {!loading && currentTableData.length > 0 && (
+                            <div className="mt-8 mb-8">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-4">
+                                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2 px-2">
                                         <Icons.Trophy className="w-4 h-4 text-yellow-600" />
-                                        Leaderboard Top 100 (30 Days)
+                                        Leaderboard ({activeTab.toUpperCase()})
                                     </h3>
-                                    <span className="text-xs text-slate-600 font-mono">API: OK</span>
+                                    
+                                    {/* Table Search Bar */}
+                                    <div className="relative w-full sm:w-64">
+                                        <Icons.Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500 w-4 h-4" />
+                                        <input
+                                            type="text"
+                                            placeholder="Find in leaderboard..."
+                                            value={tableSearchQuery}
+                                            onChange={(e) => { 
+                                                setTableSearchQuery(e.target.value);
+                                                setCurrentPage(1); // Reset page on search
+                                            }}
+                                            className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 pl-9 pr-4 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-yellow-500/50 focus:ring-1 focus:ring-yellow-500/50 transition-all"
+                                        />
+                                    </div>
                                 </div>
+                                
                                 <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
-                                    <div className="max-h-[600px] overflow-y-auto custom-scrollbar">
+                                    <div className="overflow-x-auto">
                                         <table className="w-full text-left text-sm text-slate-400">
-                                            <thead className="bg-slate-950 text-slate-500 uppercase text-[10px] font-bold tracking-wider sticky top-0 z-10 shadow-sm">
+                                            <thead className="bg-slate-950 text-slate-500 uppercase text-[10px] font-bold tracking-wider border-b border-slate-800">
                                                 <tr>
-                                                    <th className="px-6 py-4 bg-slate-950">#</th>
+                                                    <th className="px-6 py-4 bg-slate-950 w-16 text-center">#</th>
                                                     <th className="px-6 py-4 bg-slate-950">X User</th>
-                                                    <th className="px-6 py-4 text-right bg-slate-950">Mindshare</th>
-                                                    <th className="px-6 py-4 text-right text-yellow-600 bg-slate-950">Estimate</th>
+                                                    <th className="px-6 py-4 text-right bg-slate-950">Mindshare ({activeTab})</th>
+                                                    <th className="px-6 py-4 text-right text-yellow-600 bg-slate-950">Est. Alloc (30D)</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-800/50">
-                                                {data.slice(0, 100).map((user, index) => (
-                                                    <tr key={index} className="hover:bg-white/5 transition-colors group">
-                                                        <td className="px-6 py-4 font-mono text-slate-600 group-hover:text-yellow-500 transition-colors">{index + 1}</td>
-                                                        <td className="px-6 py-4 font-bold text-slate-200">
-                                                            <a href={`https://x.com/${user.username}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-yellow-400 hover:underline">
-                                                                <div className="w-6 h-6 rounded-full bg-slate-800 overflow-hidden border border-slate-700">
-                                                                    <img 
-                                                                        src={getAvatar(user.username)} 
-                                                                        alt="" 
-                                                                        className="w-full h-full object-cover"
-                                                                        onError={(e) => { e.target.onerror = null; e.target.src = `https://ui-avatars.com/api/?name=${user.username}&background=random`; }}
-                                                                    />
-                                                                </div>
-                                                                @{user.username || user.handle || 'Anon'}
-                                                            </a>
+                                                {paginatedData.length > 0 ? (
+                                                    paginatedData.map((user, index) => {
+                                                        const username = user.username || user.handle;
+                                                        // Jika ada search, index tetap berurutan di tampilan, atau mau sesuai rank asli? 
+                                                        // Di sini saya buat sesuai urutan tampilan hasil search agar rapi.
+                                                        const globalIndex = (currentPage - 1) * ITEMS_PER_PAGE + index + 1;
+                                                        
+                                                        // Kalkulasi Alokasi (Cross Reference)
+                                                        const ms30 = get30DMindshare(username);
+                                                        const allocation = ms30 * TOTAL_POOL;
+                                                        const isZero = allocation === 0;
+
+                                                        return (
+                                                            <tr key={index} className="hover:bg-white/5 transition-colors group">
+                                                                <td className="px-6 py-4 font-mono text-slate-600 group-hover:text-yellow-500 text-center">
+                                                                    {user.rank || globalIndex}
+                                                                </td>
+                                                                <td className="px-6 py-4 font-bold text-slate-200">
+                                                                    <a href={`https://x.com/${username}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 hover:text-yellow-400">
+                                                                        <div className="w-8 h-8 rounded-full bg-slate-800 overflow-hidden border border-slate-700">
+                                                                            <img 
+                                                                                src={getAvatar(username)} 
+                                                                                className="w-full h-full object-cover"
+                                                                                onError={(e) => { e.target.onerror = null; e.target.src = `https://ui-avatars.com/api/?name=${username}&background=random`; }}
+                                                                            />
+                                                                        </div>
+                                                                        @{username || 'Anon'}
+                                                                    </a>
+                                                                </td>
+                                                                <td className="px-6 py-4 text-right font-mono text-slate-400">
+                                                                    {formatCrypto(user.mindshare * 100)}%
+                                                                </td>
+                                                                <td className={`px-6 py-4 text-right font-bold font-mono ${isZero ? 'text-slate-600' : 'text-yellow-500 bg-yellow-500/5'}`}>
+                                                                    {formatNumber(allocation)}
+                                                                    {activeTab === '7d' && isZero && <span className="block text-[8px] font-normal text-red-500/50">No 30D Data</span>}
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })
+                                                ) : (
+                                                    <tr>
+                                                        <td colSpan="4" className="px-6 py-12 text-center text-slate-500">
+                                                            No users found matching "{tableSearchQuery}"
                                                         </td>
-                                                        <td className="px-6 py-4 text-right font-mono text-slate-400">{formatCrypto(user.mindshare * 100)}%</td>
-                                                        <td className="px-6 py-4 text-right font-bold text-yellow-500 font-mono bg-yellow-500/5">{formatNumber(user.mindshare * TOTAL_POOL)}</td>
                                                     </tr>
-                                                ))}
+                                                )}
                                             </tbody>
                                         </table>
+                                    </div>
+
+                                    {/* Pagination Controls */}
+                                    <div className="px-6 py-4 bg-slate-950 border-t border-slate-800 flex flex-col sm:flex-row justify-between items-center gap-4">
+                                        <span className="text-xs text-slate-500">
+                                            Page <span className="text-white font-bold">{currentPage}</span> of {totalPages} 
+                                            <span className="mx-2 text-slate-700">|</span> 
+                                            Found: {filteredData.length} Users
+                                        </span>
+                                        
+                                        <div className="flex items-center gap-2">
+                                            <button 
+                                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                                disabled={currentPage === 1}
+                                                className="p-2 rounded-lg bg-slate-800 text-white hover:bg-yellow-600 hover:text-black disabled:opacity-30 disabled:hover:bg-slate-800 disabled:hover:text-white transition-colors"
+                                            >
+                                                <Icons.ChevronLeft className="w-5 h-5" />
+                                            </button>
+                                            
+                                            {/* Page Numbers (Simple) */}
+                                            <div className="hidden sm:flex gap-1">
+                                                {[...Array(Math.min(5, totalPages))].map((_, i) => {
+                                                    let pageNum = i + 1;
+                                                    if (totalPages > 5 && currentPage > 3) {
+                                                        pageNum = currentPage - 2 + i;
+                                                    }
+                                                    if (pageNum > totalPages) return null;
+                                                    
+                                                    return (
+                                                        <button
+                                                            key={pageNum}
+                                                            onClick={() => setCurrentPage(pageNum)}
+                                                            className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${
+                                                                currentPage === pageNum 
+                                                                ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/20' 
+                                                                : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
+                                                            }`}
+                                                        >
+                                                            {pageNum}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            <button 
+                                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                                disabled={currentPage === totalPages}
+                                                className="p-2 rounded-lg bg-slate-800 text-white hover:bg-yellow-600 hover:text-black disabled:opacity-30 disabled:hover:bg-slate-800 disabled:hover:text-white transition-colors"
+                                            >
+                                                <Icons.ChevronRight className="w-5 h-5" />
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -370,7 +570,7 @@
                         {/* Creator Credits Section */}
                         <div className="mt-16 mb-8 border-t border-slate-800/50 pt-8 flex justify-center">
                             <a 
-                                href="https://x.com/CatfireOnSOL" 
+                                href="https://x.com/SuperSkyzee" 
                                 target="_blank" 
                                 rel="noopener noreferrer" 
                                 className="group flex items-center gap-3 bg-slate-900/50 hover:bg-slate-900 border border-slate-800 hover:border-yellow-500/30 px-5 py-3 rounded-full transition-all duration-300 hover:scale-105"
@@ -378,7 +578,7 @@
                                 <div className="relative">
                                     <div className="w-10 h-10 rounded-full bg-slate-800 overflow-hidden border-2 border-slate-700 group-hover:border-yellow-500 transition-colors">
                                         <img 
-                                            src="https://unavatar.io/twitter/CatfireOnSOL" 
+                                            src="https://unavatar.io/twitter/SuperSkyzee" 
                                             alt="Skyzee" 
                                             className="w-full h-full object-cover"
                                         />
@@ -388,7 +588,7 @@
                                 <div className="flex flex-col">
                                     <span className="text-xs text-slate-500 font-medium group-hover:text-yellow-500/80 transition-colors">Created by</span>
                                     <span className="text-sm font-bold text-slate-300 group-hover:text-white transition-colors">Skyzee</span>
-                                    <span className="text-[10px] text-slate-600 font-mono group-hover:text-yellow-400/60">@CatfireOnSOL</span>
+                                    <span className="text-[10px] text-slate-600 font-mono group-hover:text-yellow-400/60">@SuperSkyzee</span>
                                 </div>
                                 <Icons.ExternalLink className="w-4 h-4 text-slate-600 group-hover:text-yellow-500 ml-1 transition-colors" />
                             </a>
